@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace SUS.HTTP
+﻿namespace SUS.HTTP
 {
     public enum HttpStatusCode
     {
@@ -12,6 +8,5 @@ namespace SUS.HTTP
         TemporaryRedirect = 307,
         NotFound = 404,
         ServerError = 500,
-
     }
 }

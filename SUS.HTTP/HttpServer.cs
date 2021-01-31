@@ -1,6 +1,6 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -12,23 +12,17 @@ namespace SUS.HTTP
     public class HttpServer : IHttpServer
     {
         List<Route> routeTable;
+
         public HttpServer(List<Route> routeTable)
         {
-            foreach (var item in routeTable)
-            {
-                this.routeTable = routeTable;
-            }
+            this.routeTable = routeTable;
         }
-
-        
-           
-       
 
         public async Task StartAsync(int port)
         {
-            TcpListener tcpListener = new TcpListener(IPAddress.Loopback,port);
+            TcpListener tcpListener =
+                new TcpListener(IPAddress.Loopback, port);
             tcpListener.Start();
-
             while (true)
             {
                 TcpClient tcpClient = await tcpListener.AcceptTcpClientAsync();
@@ -42,36 +36,37 @@ namespace SUS.HTTP
             {
                 using (NetworkStream stream = tcpClient.GetStream())
                 {
-                    //TODO : Reading Request and  making it string
-                    int position = 0;
-                    byte[] buffer = new byte[4096];
-                    //TODO : research for faster data structure for array of bytes
+                    // TODO: research if there is faster data structure for array of bytes
                     List<byte> data = new List<byte>();
+                    int position = 0;
+                    byte[] buffer = new byte[HttpConstants.BufferSize]; // chunk
                     while (true)
                     {
-                        int count = await stream.ReadAsync(buffer, position, buffer.Length);
+                        int count =
+                            await stream.ReadAsync(buffer, position, buffer.Length);
                         position += count;
 
                         if (count < buffer.Length)
                         {
-                            var bufferWithData = new byte[count];
-                            Array.Copy(buffer, bufferWithData, count);
-                            data.AddRange(bufferWithData);
+                            var partialBuffer = new byte[count];
+                            Array.Copy(buffer, partialBuffer, count);
+                            data.AddRange(partialBuffer);
                             break;
                         }
                         else
                         {
                             data.AddRange(buffer);
                         }
-
                     }
 
+                    // byte[] => string (text)
                     var requestAsString = Encoding.UTF8.GetString(data.ToArray());
                     var request = new HttpRequest(requestAsString);
-                    Console.WriteLine(request.Method + " " + request.Path + " " + request.Headres.Count + "headers");
+                    Console.WriteLine($"{request.Method} {request.Path} => {request.Headers.Count} headers");
 
                     HttpResponse response;
-                    var route = this.routeTable.FirstOrDefault(x => string.Compare(x.Path, request.Path,true)==0
+                    var route = this.routeTable.FirstOrDefault(
+                        x => string.Compare(x.Path, request.Path, true) == 0
                             && x.Method == request.Method);
                     if (route != null)
                     {
@@ -79,23 +74,35 @@ namespace SUS.HTTP
                     }
                     else
                     {
+                        // Not Found 404
                         response = new HttpResponse("text/html", new byte[0], HttpStatusCode.NotFound);
                     }
 
-                    response.Header.Add(new Header("Server", "SUS Server 1.0"));
-                    var responseHeaderBytes = Encoding.UTF8.GetBytes(response.ToString());
+                    response.Headers.Add(new Header("Server", "SUS Server 1.0"));
 
+                    var sessionCookie = request.Cookies.FirstOrDefault(x => x.Name == HttpConstants.SessionCookieName);
+                    if (sessionCookie != null)
+                    {
+                        var responseSessionCookie = new ResponseCookie(sessionCookie.Name, sessionCookie.Value);
+                        responseSessionCookie.Path = "/";
+                        response.Cookies.Add(responseSessionCookie);
+                    }
+
+                    var responseHeaderBytes = Encoding.UTF8.GetBytes(response.ToString());
                     await stream.WriteAsync(responseHeaderBytes, 0, responseHeaderBytes.Length);
-                    await stream.WriteAsync(response.Body, 0, response.Body.Length);
+
+                    if (response.Body != null)
+                    {
+                        await stream.WriteAsync(response.Body, 0, response.Body.Length);
+                    }
                 }
+
                 tcpClient.Close();
             }
-            catch (Exception e)
+            catch(Exception ex)
             {
-
-                Console.WriteLine(e);
+                Console.WriteLine(ex);
             }
-            
         }
     }
 }
